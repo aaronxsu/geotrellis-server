@@ -8,6 +8,7 @@ import geotrellis.raster.resample.NearestNeighbor
 import geotrellis.raster._
 import geotrellis.proj4.CRS
 import geotrellis.vector.Extent
+import geotrellis.raster.io.geotiff.AutoHigherResolution
 import com.azavea.maml.ast.{Literal, MamlKind, RasterLit}
 
 import _root_.io.circe._
@@ -54,7 +55,7 @@ object GeoTiffNode extends RasterSourceUtils {
     def kind(self: GeoTiffNode): MamlKind = MamlKind.Image
     def extentReification(self: GeoTiffNode)(implicit contextShift: ContextShift[IO]): (Extent, CellSize) => IO[Literal] = (extent: Extent, cs: CellSize) => {
       getRasterSource(self.uri.toString)
-        .resample(TargetRegion(RasterExtent(extent, cs)), NearestNeighbor)
+        .resample(TargetRegion(RasterExtent(extent, cs)), NearestNeighbor, AutoHigherResolution)
         .read(extent, self.band :: Nil)
         .map { RasterLit(_) }
         .toIO { new Exception(s"No tile avail for RasterExtent: ${RasterExtent(extent, cs)}") }

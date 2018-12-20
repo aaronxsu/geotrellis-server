@@ -3,9 +3,10 @@ package geotrellis.server.vlm.gdal
 import geotrellis.server._
 import geotrellis.server.vlm._
 import geotrellis.contrib.vlm.gdal.{GDALBaseRasterSource, GDALRasterSource}
-import geotrellis.raster._
 import geotrellis.contrib.vlm.TargetRegion
+import geotrellis.raster._
 import geotrellis.raster.resample.NearestNeighbor
+import geotrellis.raster.io.geotiff.AutoHigherResolution
 import geotrellis.vector.Extent
 
 import com.azavea.maml.ast.{Literal, MamlKind, RasterLit}
@@ -25,11 +26,11 @@ object GDALNode extends RasterSourceUtils {
   def getRasterExtents(uri: String): IO[NEL[RasterExtent]] = IO {
     val rs = getRasterSource(uri)
     val dataset = rs.dataset
-    val band = dataset.GetRasterBand(1)
+    val band = dataset.getRasterBand(1)
 
-    NEL(rs.rasterExtent, (0 until band.GetOverviewCount()).toList.map { idx =>
-      val ovr = band.GetOverview(idx)
-      RasterExtent(rs.extent, CellSize(ovr.GetXSize(), ovr.GetYSize()))
+    NEL(rs.rasterExtent, (0 until band.getOverviewCount).toList.map { idx =>
+      val ovr = band.getOverview(idx)
+      RasterExtent(rs.extent, CellSize(ovr.getXSize, ovr.getYSize))
     })
   }
 
@@ -60,7 +61,7 @@ object GDALNode extends RasterSourceUtils {
     def kind(self: GDALNode): MamlKind = MamlKind.Image
     def extentReification(self: GDALNode)(implicit contextShift: ContextShift[IO]): (Extent, CellSize) => IO[Literal] = (extent: Extent, cs: CellSize) => {
       getRasterSource(self.uri.toString)
-        .resample(TargetRegion(RasterExtent(extent, cs)), NearestNeighbor)
+        .resample(TargetRegion(RasterExtent(extent, cs)), NearestNeighbor, AutoHigherResolution)
         .read(extent, self.band :: Nil)
         .map { RasterLit(_) }
         .toIO { new Exception(s"No tile avail for RasterExtent: ${RasterExtent(extent, cs)}") }
