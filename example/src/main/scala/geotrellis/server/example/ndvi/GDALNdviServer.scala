@@ -33,6 +33,7 @@ object GDALNdviServer extends LazyLogging with IOApp {
     for {
       conf       <- Stream.eval(LoadConf().as[ExampleConf])
       _          <- Stream.eval(IO.pure(logger.info(s"Initializing NDVI service at ${conf.http.interface}:${conf.http.port}/")))
+      _          <- Stream.eval(IO.pure(println(s"Initializing NDVI service at ${conf.http.interface}:${conf.http.port}/")))
       mamlNdviRendering = new NdviService[GDALNode]()
       exitCode   <- BlazeServerBuilder[IO]
         .enableHttp2(true)
