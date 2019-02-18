@@ -1,6 +1,6 @@
 package geotrellis.server.ogc.wms
 
-import geotrellis.server.LayerExtent
+import geotrellis.server.{LayerExtent, LayerHistogram}
 import geotrellis.server.ogc.wms.layer._
 import geotrellis.server.ogc.params.ParamError
 import geotrellis.server.ogc.wms.WmsParams.{GetCapabilities, GetMap}
@@ -20,6 +20,7 @@ import org.http4s.implicits._
 import cats.data.Validated
 import cats.data.Validated._
 import cats.effect._
+import cats.implicits._
 import _root_.io.circe._
 import _root_.io.circe.syntax._
 import com.typesafe.scalalogging.LazyLogging
@@ -42,7 +43,6 @@ class WmsService(model: RasterSourcesModel, serviceUrl: URL)(implicit contextShi
 
   def routes: HttpRoutes[IO] = HttpRoutes.of[IO] {
     case req @ GET -> Root / "wms" =>
-      println(req)
 
       WmsParams(req.multiParams) match {
         case Validated.Invalid(errors) =>
@@ -56,15 +56,27 @@ class WmsService(model: RasterSourcesModel, serviceUrl: URL)(implicit contextShi
         case Validated.Valid(wmsReq: GetMap) =>
           val re = RasterExtent(wmsReq.boundingBox, wmsReq.width, wmsReq.height)
           model.getLayer(wmsReq).map { layer =>
-            val eval = layer match {
+            val evalExtent = layer match {
               case sl@SimpleWmsLayer(_, _, _, _, _) =>
                 LayerExtent.identity(sl)
               case sl@MapAlgebraWmsLayer(_, _, _, parameters, expr, _) =>
                 LayerExtent(IO.pure(expr), IO.pure(parameters), BufferingInterpreter.DEFAULT)
             }
-            eval(re.extent, re.cellSize).attempt flatMap {
-              case Right(Valid(mbtile)) => // success
-                val rendered = Render(mbtile, layer.style, wmsReq.format)
+
+            val evalHisto = layer match {
+              case sl@SimpleWmsLayer(_, _, _, _, _) =>
+                LayerHistogram.identity(sl, 512)
+              case sl@MapAlgebraWmsLayer(_, _, _, parameters, expr, _) =>
+                LayerHistogram(IO.pure(expr), IO.pure(parameters), BufferingInterpreter.DEFAULT, 512)
+            }
+
+            (evalExtent(re.extent, re.cellSize), evalHisto).parMapN {
+              case (Valid(mbtile), Valid(hists)) => Valid((mbtile, hists))
+              case (Invalid(err), _) => Invalid(err)
+              case (_, Invalid(err)) => Invalid(err)
+            }.attempt flatMap {
+              case Right(Valid((mbtile, hists))) => // success
+                val rendered = Render(mbtile, layer.style, wmsReq.format, hists)
                 Ok(rendered)
               case Right(Invalid(errs)) => // maml-specific errors
                 logger.debug(errs.toList.toString)

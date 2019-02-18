@@ -8,6 +8,7 @@ import geotrellis.raster._
 import geotrellis.vector._
 import geotrellis.proj4.CRS
 import com.azavea.maml.ast._
+import cats.data.{NonEmptyList => NEL}
 import cats.effect._
 import cats.implicits._
 
@@ -25,6 +26,14 @@ object SimpleWmsLayer {
     def extentReification(self: SimpleWmsLayer)(implicit contextShift: ContextShift[IO]): (Extent, CellSize) => IO[Literal] =
       (extent: Extent, cs: CellSize) =>  IO {
         self.source.reprojectToGrid(self.crs, RasterExtent(extent, cs)).read(extent).map(RasterLit(_)).get
+      }
+  }
+
+  implicit val cogNodeRasterExtents: HasRasterExtents[SimpleWmsLayer] = new HasRasterExtents[SimpleWmsLayer] {
+    def rasterExtents(self: SimpleWmsLayer)(implicit contextShift: ContextShift[IO]): IO[NEL[RasterExtent]] =
+      IO {
+        NEL.fromList(self.source.resolutions.map(_.toRasterExtent))
+          .getOrElse(NEL(self.source.gridExtent.toRasterExtent, Nil))
       }
   }
 }
